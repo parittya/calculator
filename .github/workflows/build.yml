@@ -1,0 +1,57 @@
+name: Build and Release x86 Calculator
+
+# Ez a workflow manuálisan indítható az Actions fülről
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    # A fordításhoz Windows környezet szükséges, MSBuild és a UWP eszközök miatt
+    runs-on: windows-2022
+
+    steps:
+    # 1. lépés: Letölti a kódodat (a forkolt repót)
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        # A `--recursive` kapcsoló letölti a projekt almoduljait is, ami ennél a repónál kritikus
+        submodules: 'recursive'
+
+    # 2. lépés: Beállítja az MSBuild-et (a Microsoft build eszközét)
+    - name: Setup MSBuild
+      uses: microsoft/setup-msbuild@v2
+
+    # 3. lépés: Visszaállítja a NuGet csomagokat (függőségeket)
+    - name: Restore NuGet packages
+      run: nuget restore src\Calculator.sln
+
+    # 4. lépés: Lefordítja a projektet kifejezetten x86 architektúrára, Release módban
+    - name: Build the solution for x86
+      run: |
+        msbuild "src\Calculator.sln" /p:Configuration=Release /p:Platform=x86 /p:AppxPackageSigningEnabled=false
+
+    # 5. lépés: Létrehoz egy új "Release"-t a repódban
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        # A kiadás neve a futás dátumát fogja tartalmazni
+        tag_name: build-${{ github.run_number }}-${{ github.run_id }}
+        release_name: Calculator Build ${{ github.run_number }}
+        draft: false
+        prerelease: false
+
+    # 6. lépés: Feltölti a lefordított .exe fájlt a létrehozott Release-hez
+    - name: Upload Release Asset
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        # A `create_release` lépés kimenetéből veszi az URL-t, ahova feltölthet
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        # Az x86-os bináris pontos elérési útvonala a build után
+        asset_path: src\Calculator\bin\x86\Release\CalculatorApp.exe
+        asset_name: CalculatorApp_x86.exe
+        asset_content_type: application/octet-stream
